@@ -1,0 +1,34 @@
+encoder_node:
+  ros__parameters:
+    # I2C bus number for AS5600 (Raspberry Pi usually 1)
+    i2c_bus: 1
+    # Raw home offset (0..4095 ticks)
+    home_offset: 3072
+    # Additional fine offset (degrees). Use this if needed for small angle trim.
+    offset_deg: 0.0
+controller_node:
+  ros__parameters:
+    # GPIO pins (BCM numbering)
+    step_pin: 14
+    dir_pin: 15
+    enable_pin: 18
+
+    # Motor configuration
+    base_steps_per_rev: 200      # 1.8°/step motor
+    microstepping: 8             # e.g., set on driver DIP switches
+
+    # Driver direction logic levels
+    direction_cw: 1
+    direction_ccw: 0
+
+    # Control and motion
+    tolerance_deg: 0.5           # stop within this error band
+    kp: 2.0                      # (deg/s) per deg of error
+    max_speed_dps: 720.0         # cap speed (deg/s)
+    min_speed_dps: 20.0          # floor speed (deg/s)
+
+    # Direction policy: auto shortest path or force a single direction
+    direction_mode: auto_shortest  # one of: auto_shortest, force_cw, force_ccw
+
+    # Angle offset to compensate misalignment
+    offset_deg: 0.0
