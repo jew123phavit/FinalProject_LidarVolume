@@ -1,80 +1,68 @@
-# encoder_node.py
-# — แก้บั๊กอ่าน I2C, เพิ่ม offset_deg (fine trim), และ parameter callback —
 import rclpy
 from rclpy.node import Node
-from rclpy.parameter import Parameter
-from rcl_interfaces.msg import SetParametersResult
 from std_msgs.msg import Float32
 import smbus
+from rcl_interfaces.msg import SetParametersResult
 
 class AS5600Encoder:
     DEVICE_ADDRESS = 0x36
     RAW_ANGLE_REGISTER = 0x0C
-
-    def __init__(self, config):
-        self._i2c_bus_num = int(config['i2c_bus'])
-        self.bus = smbus.SMBus(self._i2c_bus_num)
-        self.offset_raw = int(config['home_offset'])
-        print("AS5600 Encoder Initialized.")
-
-    def reconfigure(self, config):
-        new_bus = int(config['i2c_bus'])
-        if new_bus != self._i2c_bus_num:
-            try: self.bus.close()
-            except Exception: pass
-            self.bus = smbus.SMBus(new_bus)
-            self._i2c_bus_num = new_bus
-        self.offset_raw = int(config['home_offset'])
+    
+    def __init__(self, i2c_bus, home_offset):
+        self.bus = smbus.SMBus(i2c_bus)
+        self.offset = home_offset
+        print(f"AS5600 Encoder Initialized with offset: {self.offset}")
 
     def read_raw_angle(self):
-        data = self.bus.read_i2c_block_data(self.DEVICE_ADDRESS, self.RAW_ANGLE_REGISTER, 2)
-        raw = (data[0] << 8) | data[1]
-        return raw & 0x0FFF  # 12-bit
+        read_bytes = self.bus.read_i2c_block_data(self.DEVICE_ADDRESS, self.RAW_ANGLE_REGISTER, 2)
+        return (read_bytes[0] << 8) | read_bytes[1]
 
     def get_angle_degrees(self):
-        raw = self.read_raw_angle()
-        corrected_raw = (raw - self.offset_raw + 4096) % 4096
-        return corrected_raw * (360.0 / 4096.0)
+        raw_angle = self.read_raw_angle()
+        # ใช้ self.offset ซึ่งสามารถเปลี่ยนแปลงได้
+        corrected_raw_angle = (raw_angle - self.offset + 4096) % 4096
+        return corrected_raw_angle * 360.0 / 4096.0
 
 class EncoderPublisherNode(Node):
     def __init__(self):
         super().__init__('encoder_node')
-        self.get_logger().info("Encoder Publisher Node Started")
+        self.get_logger().info("Encoder Publisher Node Started (with Dynamic Parameters)")
 
+        # 1. ประกาศ Parameters
         self.declare_parameter('i2c_bus', 1)
-        self.declare_parameter('home_offset', 3072)
-        self.declare_parameter('offset_deg', 0.0)  # fine trim (optional)
+        self.declare_parameter('home_offset', 3072) # ใช้ค่าจาก YAML เป็นค่าเริ่มต้น
 
-        self._reload_config()
-        self.encoder = AS5600Encoder(config=self.config)
+        # 2. ดึงค่าเริ่มต้นมาใช้งาน
+        i2c_bus = self.get_parameter('i2c_bus').value
+        initial_home_offset = self.get_parameter('home_offset').value
+        
+        self.encoder = AS5600Encoder(i2c_bus=i2c_bus, home_offset=initial_home_offset)
 
+        # 3. สร้าง Publisher
         self.publisher_ = self.create_publisher(Float32, 'current_angle', 10)
-        self.timer = self.create_timer(0.01, self.publish_angle)  # 100 Hz
 
-        self.add_on_set_parameters_callback(self._on_param_update)
+        # 4. สร้าง Timer ให้ทำงาน
+        self.timer = self.create_timer(0.01, self.publish_angle)
+        
+        # 5. !! เพิ่ม Parameter Callback !!
+        self.add_on_set_parameters_callback(self.parameters_callback)
 
-    def _reload_config(self):
-        names = ['i2c_bus', 'home_offset', 'offset_deg']
-        self.config = {n: self.get_parameter(n).value for n in names}
-
-    def _on_param_update(self, params):
-        updates = {p.name: p.value for p in params}
-        if 'home_offset' in updates:
-            v = int(updates['home_offset'])
-            if not (0 <= v <= 4095):
-                return SetParametersResult(successful=False, reason='home_offset must be in [0, 4095]')
-        for p in params:
-            self.set_parameters([Parameter(name=p.name, value=p.value)])
-        self._reload_config()
-        self.encoder.reconfigure(self.config)
+    def parameters_callback(self, params):
+        """ฟังก์ชันที่จะถูกเรียกเมื่อมีการ `ros2 param set`"""
+        for param in params:
+            if param.name == 'home_offset':
+                # อัปเดตค่า offset ใน object encoder โดยตรง
+                new_offset = param.value
+                self.encoder.offset = new_offset
+                self.get_logger().info(f"Home offset dynamically updated to: {new_offset}")
         return SetParametersResult(successful=True)
 
     def publish_angle(self):
         angle = self.encoder.get_angle_degrees()
-        angle = (angle + float(self.config.get('offset_deg', 0.0))) % 360.0
         msg = Float32()
-        msg.data = float(angle)
+        msg.data = angle
         self.publisher_.publish(msg)
+
 
 def main(args=None):
     rclpy.init(args=args)
