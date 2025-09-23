@@ -1,87 +1,44 @@
 import os
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
 from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
-    # --- Launch Arguments ---
-    pkg_name = 'closed_loop_control'
+    """
+    ฟังก์ชันนี้จะถูกเรียกโดย `ros2 launch` เพื่อสร้างคำอธิบายของสิ่งที่จะรัน
+    """
+    
+    # --- 1. กำหนดชื่อแพ็คเกจของเรา ---
+    # เราควรเก็บชื่อแพ็คเกจไว้ในตัวแปรเพื่อให้แก้ไขง่ายในอนาคต
+    package_name = 'closed_loop_control'
 
-    default_config = os.path.join(
-        get_package_share_directory(pkg_name), 'config', 'motor_config.yaml'
+    # --- 2. สร้าง Path ไปยังไฟล์ Configuration (YAML) ---
+    # get_package_share_directory(package_name) จะคืนค่า Path ไปยังโฟลเดอร์ 'install/closed_loop_control/share/closed_loop_control'
+    # จากนั้นเราใช้ os.path.join เพื่อสร้าง Path ที่สมบูรณ์ไปยังไฟล์ YAML ของเรา
+    config_file_path = os.path.join(
+        get_package_share_directory(package_name),
+        'config',
+        'motor_config.yaml'
     )
 
-    config_arg = DeclareLaunchArgument(
-        'config_file', default_value=default_config,
-        description='Path to motor_config.yaml'
-    )
-
-    # Controller tuning / options
-    direction_mode_arg = DeclareLaunchArgument(
-        'direction_mode', default_value='auto_shortest',
-        description='Motion policy: auto_shortest | force_cw | force_ccw'
-    )
-    kp_arg = DeclareLaunchArgument('kp', default_value='2.0', description='P gain (deg/s per deg)')
-    max_speed_arg = DeclareLaunchArgument('max_speed_dps', default_value='720.0', description='Max speed (deg/s)')
-    min_speed_arg = DeclareLaunchArgument('min_speed_dps', default_value='20.0', description='Min speed (deg/s)')
-
-    # Angle offsets (deg)
-    offset_ctrl_arg = DeclareLaunchArgument('offset_deg_ctrl', default_value='0.0', description='Controller offset (deg)')
-    offset_enc_arg = DeclareLaunchArgument('offset_deg_enc', default_value='0.0', description='Encoder fine offset (deg)')
-
-    # Optional logging level
-    log_level_arg = DeclareLaunchArgument('log_level', default_value='info', description='ROS log level')
-
-    # --- Nodes ---
-    config = LaunchConfiguration('config_file')
-
-    encoder_node = Node(
-        package=pkg_name,
-        executable='encoder_node',
-        name='encoder_node',
-        output='screen',
-        emulate_tty=True,
-        parameters=[
-            config,
-            {
-                # Fine offset (post-sensor compensation)
-                'offset_deg': ParameterValue(LaunchConfiguration('offset_deg_enc'), value_type=float),
-            },
-        ],
-        arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
-    )
-
-    controller_node = Node(
-        package=pkg_name,
-        executable='controller_node',
-        name='controller_node',
-        output='screen',
-        emulate_tty=True,
-        parameters=[
-            config,
-            {
-                'direction_mode': LaunchConfiguration('direction_mode'),
-                'kp': ParameterValue(LaunchConfiguration('kp'), value_type=float),
-                'max_speed_dps': ParameterValue(LaunchConfiguration('max_speed_dps'), value_type=float),
-                'min_speed_dps': ParameterValue(LaunchConfiguration('min_speed_dps'), value_type=float),
-                'offset_deg': ParameterValue(LaunchConfiguration('offset_deg_ctrl'), value_type=float),
-            },
-        ],
-        arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
-    )
-
+    # --- 3. สร้าง LaunchDescription ซึ่งเป็นเหมือนรายการของสิ่งที่จะรัน ---
     return LaunchDescription([
-        config_arg,
-        direction_mode_arg,
-        kp_arg,
-        max_speed_arg,
-        min_speed_arg,
-        offset_ctrl_arg,
-        offset_enc_arg,
-        log_level_arg,
-        encoder_node,
-        controller_node,
+        
+        # --- 4. นิยาม Node ตัวที่หนึ่ง: Encoder Node ---
+        Node(
+            package=package_name,          # ชื่อแพ็คเกจที่ Node นี้อยู่
+            executable='encoder_node',     # ชื่อ executable ที่กำหนดใน setup.py
+            name='encoder_node',           # ชื่อของ Node ตอนที่รันในระบบ ROS2
+            parameters=[config_file_path], # !! ส่วนสำคัญ: บอกให้ Node นี้โหลดพารามิเตอร์จากไฟล์ที่เราหาไว้
+            output='screen',               # แสดง log ของ Node นี้บนหน้าจอ Terminal
+        ),
+
+        # --- 5. นิยาม Node ตัวที่สอง: Controller Node ---
+        Node(
+            package=package_name,
+            executable='controller_node',
+            name='controller_node',
+            parameters=[config_file_path], # Node นี้ก็ใช้ไฟล์ config เดียวกัน
+            output='screen',
+        ),
     ])
