@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>closed_loop_control</name>
+  <version>0.0.1</version>
+  <description>Stepper closed-loop control (Python only)</description>
+  <maintainer email="you@example.com">Phavit</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
