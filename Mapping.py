@@ -11,9 +11,9 @@ MQTT_PORT = 1883
 MQTT_TOPIC_MAP = 'mapping/grid'
 
 # --- Matplotlib Setup ---
-fig, ax = plt.subplots(figsize=(8, 8))
+fig, ax = plt.subplots(figsize=(2, 2))
 # สร้าง plot แบบภาพ (imshow) รอไว้
-map_plot = ax.imshow(np.zeros((10, 10)), cmap='gray_r', origin='lower')
+map_plot = ax.imshow(np.zeros((2, 2)), cmap='gray_r', origin='lower', vmin=-1, vmax=100)
 
 # --- Global variable for data ---
 latest_map_data = {}
@@ -23,6 +23,7 @@ def on_message(client, userdata, msg):
     global latest_map_data
     try:
         if msg.topic == MQTT_TOPIC_MAP:
+            print("--> Received map data via MQTT!") # <-- เพิ่มบรรทัดนี้
             latest_map_data = json.loads(msg.payload.decode())
     except Exception as e:
         print(f"Error processing message: {e}")
@@ -63,7 +64,8 @@ def main():
         print(f"Could not connect to MQTT Broker: {e}")
         sys.exit()
 
-    ani = animation.FuncAnimation(fig, update_plot, init_func=init_plot, blit=True, interval=500)
+    ani = animation.FuncAnimation(fig, update_plot, init_func=init_plot, blit=False, interval=500)
+
     plt.show()
 
     client.loop_stop()
