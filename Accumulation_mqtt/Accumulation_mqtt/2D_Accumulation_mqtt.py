@@ -7,8 +7,8 @@ from sensor_msgs.msg import LaserScan
 from skimage.draw import line # Library ช่วยวาดเส้นตรง
 
 # --- การตั้งค่า ---
-MAP_SIZE_PIXELS = 500       # ขนาดของแผนที่ (pixels)
-MAP_RESOLUTION = 0.05       # ความละเอียดของแผนที่ (เมตร/pixel) -> 5cm per pixel
+MAP_SIZE_PIXELS = 250       # ขนาดของแผนที่ (pixels)
+MAP_RESOLUTION = 0.025      # ความละเอียดของแผนที่ (เมตร/pixel) -> 5cm per pixel
 MQTT_BROKER = 'localhost'
 MQTT_PORT = 1883
 MQTT_TOPIC_MAP = 'mapping/grid'
@@ -32,8 +32,8 @@ class MapAccumulatorNode(Node):
         # 3. Setup ROS 2 Subscription
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
 
-        # 4. ตั้งเวลาส่งข้อมูลแผนที่ทุกๆ 2 วินาที
-        self.create_timer(2.0, self.publish_map_callback)
+        # 4. ตั้งเวลาส่งข้อมูลแผนที่ทุกๆ 1 วินาที
+        self.create_timer(1.0, self.publish_map_callback)
 
     def scan_callback(self, msg):
         # จุดศูนย์กลางของ Lidar (ในพิกัด pixel ของแผนที่)
@@ -74,7 +74,7 @@ class MapAccumulatorNode(Node):
         }
         payload = json.dumps(map_data)
         self.mqtt_client.publish(MQTT_TOPIC_MAP, payload)
-        self.get_logger().info('Published accumulated map to MQTT.')
+        #self.get_logger().info('Published accumulated map to MQTT.')
 
 def main(args=None):
     rclpy.init(args=args)
