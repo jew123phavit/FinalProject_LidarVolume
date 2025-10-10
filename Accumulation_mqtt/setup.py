@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'slam_bridge_node'
+package_name = 'Accumulation_mqtt'
 
 setup(
     name=package_name,
@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'slam_bridge_node = slam_bridge_node.slam_bridge_node:main'
+            'Accumulation_mqtt = Accumulation_mqtt.2D_Accumulation_mqtt:main',
         ],
     },
 )
