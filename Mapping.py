@@ -15,22 +15,21 @@ MQTT_TOPIC_RESET = 'mapping/reset'
 # --- Global variable for data and settings ---
 latest_map_data = {}
 map_resolution = 0.05 # 1 pixel = 0.05 เมตร
+# *** ปรับปรุง: ตัวเลือกขนาดแผนที่ใหม่ ***
 MAP_SIZE_OPTIONS = [1.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0] 
 current_map_size = max(MAP_SIZE_OPTIONS) # เริ่มต้นที่ 8.0 เมตร (ค่าสูงสุด)
-# *** ตัวแปรสำหรับเก็บ Grid Map ปัจจุบัน (เพื่อให้ reset_map เข้าถึงได้) ***
-current_grid = np.zeros((100, 100)) # ตั้งขนาดเริ่มต้นเผื่อไว้
 
 # --- Matplotlib Setup ---
 fig, ax = plt.subplots(figsize=(8, 8)) 
-map_plot = ax.imshow(current_grid, cmap='binary', origin='lower', vmin=-1, vmax=100)
+# ใช้ 'binary' หรือ 'gray_r' เพื่อแสดงผลแผนที่ (0=ว่าง, 100=สิ่งกีดขวาง)
+map_plot = ax.imshow(np.zeros((50, 50)), cmap='binary', origin='lower', vmin=-1, vmax=100)
 center_marker = ax.plot(0, 0, marker='+', color='cyan', markersize=10, markeredgewidth=2, label='LiDAR Position')[0]
 
-plt.subplots_adjust(bottom=0.25) 
+plt.subplots_adjust(bottom=0.25) # เว้นที่ว่างด้านล่างสำหรับ Widgets
 
 # --- MQTT Client Instance ---
 client = mqtt.Client()
 
-# --- MQTT Callbacks (ไม่มีการเปลี่ยนแปลง) ---
 def on_connect(client, userdata, flags, rc):
     """Callback เมื่อเชื่อมต่อ MQTT สำเร็จ/ล้มเหลว"""
     if rc == 0:
@@ -51,6 +50,7 @@ def on_message(client, userdata, msg):
         if msg.topic == MQTT_TOPIC_MAP:
             data = json.loads(msg.payload.decode())
             
+            # ดึงค่า resolution มาจาก payload (ถ้ามี)
             if 'resolution' in data and data['resolution'] > 0:
                 map_resolution = data['resolution']
             
@@ -73,12 +73,13 @@ def set_plot_limits(size_m):
     ax.set_ylabel("Y (m)")
     
     # วาด Scale/Grid ใหม่
+    # สร้าง Ticks ตามขอบเขตที่เลือก
     if size_m <= 1.0:
-        step = 0.10 
+        step = 0.10 # สำหรับ 1m, ใช้ 0.1m ต่อช่อง
     elif size_m <= 4.0:
-        step = 0.50 
-    else:
-        step = 1.0 
+        step = 0.50 # สำหรับ 3m, 4m, ใช้ 0.5m ต่อช่อง
+    else: # สำหรับขนาดใหญ่ (5m ขึ้นไป)
+        step = 1.0 # ใช้ 1.0m ต่อช่อง เพื่อไม่ให้ตารางถี่เกินไป
 
     major_ticks = np.arange(-size_m, size_m + 0.001, step)
     ax.set_xticks(major_ticks)
@@ -87,56 +88,45 @@ def set_plot_limits(size_m):
 
 def update_plot(frame):
     """อัปเดตกราฟด้วยข้อมูลแผนที่ใหม่"""
-    global map_plot, latest_map_data, map_resolution, current_map_size, current_grid
+    global map_plot, latest_map_data, map_resolution, current_map_size
     
     if 'data' in latest_map_data:
         width = latest_map_data['width']
         height = latest_map_data['height']
         resolution = map_resolution
         
+        # คำนวณขอบเขตของแผนที่ในหน่วยเมตร
         max_extent = (width * resolution) / 2
         
-        # *** อัปเดต current_grid ด้วยข้อมูลใหม่ ***
+        # แปลง list กลับเป็น numpy array 2D
+        # np.clip ใช้เพื่อจำกัดค่าให้แผนที่ดูชัดเจนยิ่งขึ้น (0=ว่าง, 100=สิ่งกีดขวาง)
         grid = np.array(latest_map_data['data']).reshape((height, width))
-        current_grid = np.clip(grid, -1, 100) # อัปเดตตัวแปร global
+        grid = np.clip(grid, -1, 100)
         
+        # Matplotlib extent: [x_min, x_max, y_min, y_max]
         extent = [-max_extent, max_extent, -max_extent, max_extent]
         
-        map_plot.set_data(current_grid)
+        # อัปเดตข้อมูลภาพใน plot
+        map_plot.set_data(grid)
         map_plot.set_extent(extent)
         
+        # ตั้งค่าแกน X/Y ให้เป็นหน่วยเมตรตามขนาดที่ผู้ใช้เลือก
         set_plot_limits(current_map_size)
         
+        # เคลียร์ข้อมูลเก่าเพื่อรอรับอัปเดตใหม่
         latest_map_data.clear()
-    
-    # ถ้าไม่มีข้อมูลใหม่เข้า ก็ยังคงแสดง current_grid ล่าสุด
+        
+    # center_marker เป็นตัวบอกตำแหน่งเริ่มต้น (0,0) ของ LiDAR/หุ่นยนต์
     return map_plot, center_marker
 
 # --- Widget Callbacks ---
 
 def reset_map(event):
-    """ส่งคำสั่ง Reset ไปยัง RPi และเคลียร์ภาพหน้าจอทันที"""
-    global current_grid, map_plot, fig
-    
+    """Callback สำหรับปุ่ม Reset: ส่งคำสั่ง MQTT ไปยัง RPi"""
     if client.is_connected():
-        print("Sending RESET command via MQTT (QoS 1)...")
-        # *** ส่งข้อความด้วย QoS=1 ***
-        client.publish(MQTT_TOPIC_RESET, payload="reset", qos=1)
-        
-        # *** เคลียร์ภาพหน้าจอทันที (UI Feedback) ***
-        # สร้าง Grid ว่างเปล่าขนาดเท่าเดิม โดยกำหนดค่าเป็น -1 (Unknown)
-        if current_grid.size > 0:
-             cleared_grid = np.full(current_grid.shape, -1, dtype=current_grid.dtype)
-        else:
-             # หากยังไม่มีข้อมูล (ขนาด 100x100 ตามค่าเริ่มต้น)
-             cleared_grid = np.full((100, 100), -1) 
-             
-        current_grid = cleared_grid # อัปเดตตัวแปร global
-        map_plot.set_data(current_grid)
-        
-        # บังคับให้ Matplotlib วาดใหม่ทันที
-        fig.canvas.draw_idle()
-        print("Map screen cleared locally.")
+        print("Sending RESET command via MQTT...")
+        # ส่งข้อความควบคุมไปที่ RPi เพื่อสั่งให้รีเซ็ต Grid Map
+        client.publish(MQTT_TOPIC_RESET, payload="reset", qos=0)
     else:
         print("Cannot send RESET command: MQTT client is disconnected.")
 
@@ -146,7 +136,7 @@ def select_range(label):
     set_plot_limits(size_m)
     print(f"Display Range set to {size_m:.2f} m.")
 
-# --- Main Application Logic (ไม่มีการเปลี่ยนแปลง) ---
+# --- Main Application Logic ---
 def main():
     global client, current_map_size
     
@@ -174,10 +164,12 @@ def main():
 
     # B. Radio Buttons สำหรับเลือก Range/Zoom (1.0m - 8.0m)
     ax_range = plt.axes([0.70, 0.05, 0.20, 0.15])
+    # สร้าง Label จากตัวเลข (เช่น "1.00 m")
     range_labels = [f"{s:.2f} m" for s in MAP_SIZE_OPTIONS]
     radio_range = RadioButtons(ax_range, range_labels)
     radio_range.on_clicked(select_range)
     
+    # เลือกค่าเริ่มต้นที่ 8.0 m (ค่าสูงสุด)
     initial_index = MAP_SIZE_OPTIONS.index(current_map_size)
     radio_range.set_active(initial_index)
 
