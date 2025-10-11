@@ -72,6 +72,10 @@ def main():
     print("Application closed.")
 
 if __name__ == '__main__':
+<<<<<<< HEAD
     main()
 
     
+=======
+    main()
+>>>>>>> 223f290bbd772c4c9b73e16cd2ced31418585ad3
