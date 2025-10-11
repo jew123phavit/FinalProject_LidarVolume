@@ -3,7 +3,7 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from matplotlib.widgets import Button, Slider, RadioButtons # นำเข้า Widget ใหม่
+from matplotlib.widgets import Button, Slider, RadioButtons
 import sys
 
 # --- MQTT Settings ---
@@ -15,12 +15,12 @@ MQTT_TOPIC_RESET = 'mapping/reset'
 # --- Global variable for data and settings ---
 latest_map_data = {}
 map_resolution = 0.05 # สมมติฐานเริ่มต้น: 1 pixel = 0.05 เมตร
-current_map_size = 0.80 # เริ่มต้นที่ 0.80 เมตร
-MAP_SIZE_OPTIONS = [0.10, 0.20, 0.40, 0.60, 0.80] # ตัวเลือกขนาดแผนที่ที่ต้องการ
+# *** การแก้ไขหลัก: เพิ่ม 2.50 เข้าไปในรายการ ***
+MAP_SIZE_OPTIONS = [0.10, 0.50, 0.80, 1.00, 1.60, 2.50] 
+current_map_size = max(MAP_SIZE_OPTIONS) # เริ่มต้นที่ 2.50 เมตร
 
 # --- Matplotlib Setup ---
 fig, ax = plt.subplots(figsize=(8, 8)) 
-# ใช้ 'binary' หรือ 'gray_r' เพื่อแสดงผลแผนที่ (0=ว่าง, 100=สิ่งกีดขวาง)
 map_plot = ax.imshow(np.zeros((50, 50)), cmap='binary', origin='lower', vmin=-1, vmax=100)
 center_marker = ax.plot(0, 0, marker='+', color='cyan', markersize=10, markeredgewidth=2, label='LiDAR Position')[0]
 
@@ -49,7 +49,6 @@ def on_message(client, userdata, msg):
         if msg.topic == MQTT_TOPIC_MAP:
             data = json.loads(msg.payload.decode())
             
-            # ดึงค่า resolution มาจาก payload (ถ้ามี)
             if 'resolution' in data and data['resolution'] > 0:
                 map_resolution = data['resolution']
             
@@ -72,8 +71,7 @@ def set_plot_limits(size_m):
     ax.set_ylabel("Y (m)")
     
     # วาด Scale/Grid ใหม่
-    # สร้าง Ticks ตามขอบเขตที่เลือก (ตัวอย่าง: ทุก 0.1 เมตร)
-    major_ticks = np.arange(-size_m, size_m + 0.001, 0.10)
+    major_ticks = np.arange(-size_m, size_m + 0.001, 0.5 if size_m >= 1.0 else 0.10) # ปรับช่วง Grid ให้เหมาะสมกับขนาดใหญ่
     ax.set_xticks(major_ticks)
     ax.set_yticks(major_ticks)
     ax.grid(which='major', color='gray', linestyle='--', alpha=0.5)
@@ -87,28 +85,20 @@ def update_plot(frame):
         height = latest_map_data['height']
         resolution = map_resolution
         
-        # คำนวณขอบเขตของแผนที่ในหน่วยเมตร
         max_extent = (width * resolution) / 2
         
-        # แปลง list กลับเป็น numpy array 2D
-        # np.clip ใช้เพื่อจำกัดค่าให้แผนที่ดูชัดเจนยิ่งขึ้น (0=ว่าง, 100=สิ่งกีดขวาง)
         grid = np.array(latest_map_data['data']).reshape((height, width))
         grid = np.clip(grid, -1, 100)
         
-        # Matplotlib extent: [x_min, x_max, y_min, y_max]
         extent = [-max_extent, max_extent, -max_extent, max_extent]
         
-        # อัปเดตข้อมูลภาพใน plot
         map_plot.set_data(grid)
         map_plot.set_extent(extent)
         
-        # ตั้งค่าแกน X/Y ให้เป็นหน่วยเมตรตามขนาดที่ผู้ใช้เลือก
         set_plot_limits(current_map_size)
         
-        # เคลียร์ข้อมูลเก่าเพื่อรอรับอัปเดตใหม่
         latest_map_data.clear()
         
-    # center_marker เป็นตัวบอกตำแหน่งเริ่มต้น (0,0) ของ LiDAR/หุ่นยนต์
     return map_plot, center_marker
 
 # --- Widget Callbacks ---
@@ -117,14 +107,13 @@ def reset_map(event):
     """Callback สำหรับปุ่ม Reset: ส่งคำสั่ง MQTT ไปยัง RPi"""
     if client.is_connected():
         print("Sending RESET command via MQTT...")
-        # ส่งข้อความควบคุมไปที่ RPi เพื่อสั่งให้รีเซ็ต Grid Map
         client.publish(MQTT_TOPIC_RESET, payload="reset", qos=0)
     else:
         print("Cannot send RESET command: MQTT client is disconnected.")
 
 def select_range(label):
     """Callback สำหรับ Radio Buttons (ตัวเลือกขนาดแผนที่)"""
-    size_m = float(label.split()[0]) # ดึงค่าตัวเลขจาก Label
+    size_m = float(label.split()[0]) 
     set_plot_limits(size_m)
     print(f"Display Range set to {size_m:.2f} m.")
 
@@ -154,14 +143,13 @@ def main():
     btn_reset = Button(ax_reset, 'RESET')
     btn_reset.on_clicked(reset_map)
 
-    # B. Radio Buttons สำหรับเลือก Range/Zoom (0.10m - 0.80m)
+    # B. Radio Buttons สำหรับเลือก Range/Zoom (0.10m - 2.50m)
     ax_range = plt.axes([0.70, 0.05, 0.20, 0.15])
-    # สร้าง Label จากตัวเลข (เช่น "0.10 m")
     range_labels = [f"{s:.2f} m" for s in MAP_SIZE_OPTIONS]
     radio_range = RadioButtons(ax_range, range_labels)
     radio_range.on_clicked(select_range)
     
-    # เลือกค่าเริ่มต้นที่ 0.80 m
+    # เลือกค่าเริ่มต้นที่ 2.50 m
     initial_index = MAP_SIZE_OPTIONS.index(current_map_size)
     radio_range.set_active(initial_index)
 
