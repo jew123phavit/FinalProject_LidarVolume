@@ -21,10 +21,11 @@ current_map_size = max(MAP_SIZE_OPTIONS)
 # --- Matplotlib Setup ---
 fig, ax = plt.subplots(figsize=(8, 8)) 
 
-# *** การแก้ไขหลัก: เปลี่ยน Colormap เป็น 'gray_r' (ขาว-ดำ) ***
-# vmin/vmax ตั้งค่าเพื่อให้: -1=Unknown (เทาอ่อน), 0=Free (ขาว), 100=Occupied (ดำ)
-map_plot = ax.imshow(np.zeros((50, 50)), cmap='gray_r', origin='lower', vmin=-1, vmax=100)
-# เปลี่ยน Marker ตำแหน่ง LiDAR เป็นวงกลมสีแดง (เหมือนใน RViz)
+# *** การแก้ไขหลัก: Colormap เป็น 'binary_r' ***
+# binary_r: 0 (ค่าต่ำ) -> ขาว, 100 (ค่าสูง) -> ดำ
+# vmin=0: ทำให้ -1 (Unknown) ถูกปัดไปที่ค่าต่ำสุด คือ "ขาว" 
+map_plot = ax.imshow(np.zeros((50, 50)), cmap='binary_r', origin='lower', vmin=0, vmax=100) 
+# Marker ตำแหน่ง LiDAR เป็นวงกลมสีแดง
 center_marker = ax.plot(0, 0, marker='o', color='red', markersize=8, markeredgewidth=2, label='LiDAR Position')[0]
 
 plt.subplots_adjust(bottom=0.25) 
@@ -64,7 +65,7 @@ def set_plot_limits(size_m):
     ax.set_xlim([-size_m, size_m])
     ax.set_ylim([-size_m, size_m])
     ax.set_aspect('equal', adjustable='box')
-    ax.set_title(f"Accumulated 2D Lidar Map (Range: {size_m:.2f} m)", fontsize=14)
+    ax.set_title(f"2D Point Accumulation Map (Range: {size_m:.2f} m)", fontsize=14)
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)")
     
@@ -87,7 +88,10 @@ def update_plot(frame):
         grid_flat = np.array(latest_map_data['data'])
         grid = grid_flat.reshape((height, width))
         
-        grid = np.clip(grid, -1, 100)
+        # *** การแก้ไข: แปลง -1 (Unknown) ให้เป็น 0 (Free) เพื่อให้เป็นสีขาว ***
+        # โค้ดนี้จะช่วยให้พื้นหลังเป็นสีขาวสะอาดตาเหมือนในภาพ Point Cloud
+        grid[grid == -1] = 0 
+        grid = np.clip(grid, 0, 100) # จำกัดค่าให้อยู่ในช่วง 0-100
         
         extent = [-max_extent, max_extent, -max_extent, max_extent]
         
@@ -147,10 +151,10 @@ def main():
     # 3. รัน Animation และแสดงผล
     ani = animation.FuncAnimation(fig, update_plot, blit=False, interval=500)
     
-    # *** เพิ่ม Colorbar ให้สอดคล้องกับโทนสี SLAM ***
-    dummy_im = ax.imshow(np.array([[-1, 100]]), cmap='gray_r', vmin=-1, vmax=100)
+    # Colorbar
+    dummy_im = ax.imshow(np.array([[0, 100]]), cmap='binary_r', vmin=0, vmax=100)
     cbar = fig.colorbar(dummy_im, ax=ax, orientation='vertical', fraction=0.046, pad=0.04)
-    cbar.ax.set_ylabel('Occupancy Probability (-1=Unknown, 0=Free, 100=Occupied)', rotation=-90, va="bottom")
+    cbar.ax.set_ylabel('Occupancy Probability (0=Free, 100=Occupied)', rotation=-90, va="bottom")
 
 
     plt.show()
