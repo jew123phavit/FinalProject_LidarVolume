@@ -4,81 +4,91 @@ import paho.mqtt.client as mqtt
 import json
 import numpy as np
 from sensor_msgs.msg import LaserScan
-from skimage.draw import line # Library ช่วยวาดเส้นตรง
+from std_msgs.msg import String # สำหรับรับคำสั่ง Reset
 
-# --- การตั้งค่า ---
-MAP_SIZE_PIXELS = 250       # ขนาดของแผนที่ (pixels)
-MAP_RESOLUTION = 0.025      # ความละเอียดของแผนที่ (เมตร/pixel) -> 5cm per pixel
-MQTT_BROKER = 'localhost'
+# --- การตั้งค่า MQTT ---
+MQTT_BROKER = '100.117.126.91' # IP ของ RPi (Tailscale)
 MQTT_PORT = 1883
-MQTT_TOPIC_MAP = 'mapping/grid'
+MQTT_TOPIC_POINTS = 'mapping/points_2d' # Topic ใหม่สำหรับส่งข้อมูลพิกัด
+MQTT_TOPIC_RESET = 'mapping/reset'      # Topic สำหรับรับคำสั่ง Reset จาก GUI
 
-class MapAccumulatorNode(Node):
+class PointPublisherNode(Node):
 
     def __init__(self):
-        super().__init__('map_accumulator_node')
-        self.get_logger().info('Map Accumulator Node has been started.')
+        super().__init__('point_publisher_node')
+        self.get_logger().info('Point Publisher Node has been started.')
 
-        # 1. สร้างแผนที่เปล่า (Occupancy Grid)
-        # -1 = Unknown, 0 = Free, 100 = Occupied
-        self.grid_map = np.full((MAP_SIZE_PIXELS, MAP_SIZE_PIXELS), -1, dtype=np.int8)
-        self.map_origin_pixels = MAP_SIZE_PIXELS // 2 # จุดศูนย์กลางของแผนที่
+        # 1. ไม่สร้างแผนที่เป็น Grid แต่จะสะสมพิกัด (x,y) ในหน่วยเมตร
+        self.accumulated_points = []
 
-        # 2. Setup MQTT Client
+        # 2. ตั้งค่า MQTT Client
         self.mqtt_client = mqtt.Client()
+        self.mqtt_client.on_connect = self.on_mqtt_connect
+        self.mqtt_client.on_message = self.on_mqtt_message # เพิ่ม callback เพื่อรับ message
         self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
         self.mqtt_client.loop_start()
 
-        # 3. Setup ROS 2 Subscription
+        # 3. ตั้งค่า ROS2 Subscription สำหรับ LiDAR
         self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
 
-        # 4. ตั้งเวลาส่งข้อมูลแผนที่ทุกๆ 1 วินาที
-        self.create_timer(1.0, self.publish_map_callback)
+        # 4. ตั้งเวลาส่งข้อมูลทุกๆ 1 วินาที
+        self.create_timer(1.0, self.publish_points_callback)
+        self.get_logger().info(f"Publishing 2D points to MQTT topic '{MQTT_TOPIC_POINTS}'")
 
-    def scan_callback(self, msg):
-        # จุดศูนย์กลางของ Lidar (ในพิกัด pixel ของแผนที่)
-        lidar_px = self.map_origin_pixels
-        lidar_py = self.map_origin_pixels
+    def on_mqtt_connect(self, client, userdata, flags, rc):
+        """Callback เมื่อเชื่อมต่อ MQTT สำเร็จ"""
+        if rc == 0:
+            self.get_logger().info("Connected to MQTT Broker.")
+            # ดักฟังคำสั่ง Reset ที่ส่งมาจาก GUI
+            client.subscribe(MQTT_TOPIC_RESET)
+            self.get_logger().info(f"Subscribed to MQTT topic '{MQTT_TOPIC_RESET}'")
+        else:
+            self.get_logger().error(f"Failed to connect to MQTT Broker, return code {rc}")
 
-        # วนลูปข้อมูลทุกจุดใน scan
+    def on_mqtt_message(self, client, userdata, msg):
+        """Callback เมื่อได้รับ Message จาก Broker (เช่นคำสั่ง Reset)"""
+        if msg.topic == MQTT_TOPIC_RESET:
+            self.get_logger().info("<<<<< Reset command received from GUI. Clearing accumulated points. >>>>>")
+            self.accumulated_points = []
+
+    def scan_callback(self, msg: LaserScan):
+        """รับข้อมูลดิบจาก LiDAR แล้วแปลงเป็นพิกัด (x, y) ในหน่วยเมตร"""
+        points_this_scan = []
         for i, distance in enumerate(msg.ranges):
-            # กรองข้อมูลที่ไม่ถูกต้องออก
+            # กรองข้อมูลระยะทางที่ผิดพลาดออก
             if not (msg.range_min < distance < msg.range_max):
                 continue
 
             angle = msg.angle_min + i * msg.angle_increment
 
-            # แปลง Polar (angle, distance) เป็น Cartesian (x, y) ในหน่วยเมตร
+            # แปลง Polar (angle, distance) เป็น Cartesian (x, y) ในหน่วยเมตร (SI units)
+            # ตามมาตรฐาน ROS: แกน X คือด้านหน้า, แกน Y คือด้านซ้าย
             x_m = distance * np.cos(angle)
             y_m = distance * np.sin(angle)
+            points_this_scan.append([x_m, y_m])
 
-            # แปลงจากเมตรเป็นพิกัด pixel บนแผนที่
-            # แกน y ของ numpy array จะกลับด้านกับแกน y ทางคณิตศาสตร์
-            endpoint_px = int(lidar_px + y_m / MAP_RESOLUTION)
-            endpoint_py = int(lidar_py + x_m / MAP_RESOLUTION)
+        # เพิ่มพิกัดที่ได้ใหม่เข้าไปใน list ที่สะสมไว้
+        self.accumulated_points.extend(points_this_scan)
 
-            # ตรวจสอบว่าจุดอยู่ในขอบเขตของแผนที่หรือไม่
-            if 0 <= endpoint_px < MAP_SIZE_PIXELS and 0 <= endpoint_py < MAP_SIZE_PIXELS:
-                # ใช้อัลกอริทึมวาดเส้นตรงเพื่อระบุพื้นที่ว่าง (Free space)
-                rr, cc = line(lidar_px, lidar_py, endpoint_px, endpoint_py)
-                self.grid_map[rr, cc] = 0 # 0 = Free
+    def publish_points_callback(self):
+        """ส่งข้อมูลพิกัดทั้งหมดที่สะสมไว้ออกไปทาง MQTT"""
+        if not self.accumulated_points:
+            return
 
-                # ระบุว่าจุดที่สแกนเจอเป็นสิ่งกีดขวาง (Occupied)
-                self.grid_map[endpoint_px, endpoint_py] = 100 # 100 = Occupied
-
-    def publish_map_callback(self):
-        map_data = {
-            'width': MAP_SIZE_PIXELS,
-            'height': MAP_SIZE_PIXELS,
-            'data': self.grid_map.flatten().tolist() # แปลง array 2D เป็น list ยาวๆ
+        # Payload ตอนนี้จะมีแค่รายการของพิกัดในหน่วยเมตร
+        payload = {
+            'points_m': self.accumulated_points
         }
-        payload = json.dumps(map_data)
-        self.mqtt_client.publish(MQTT_TOPIC_MAP, payload)
-        #self.get_logger().info('Published accumulated map to MQTT.')
+        
+        try:
+            payload_json = json.dumps(payload)
+            self.mqtt_client.publish(MQTT_TOPIC_POINTS, payload_json)
+        except Exception as e:
+            self.get_logger().error(f"Failed to publish points: {e}")
 
 def main(args=None):
     rclpy.init(args=args)
-    node = MapAccumulatorNode()
+    node = PointPublisherNode()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
