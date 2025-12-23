@@ -7,7 +7,7 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String # สำหรับรับคำสั่ง Reset
 
 # --- การตั้งค่า MQTT ---
-MQTT_BROKER = '100.117.126.91' # IP ของ RPi (Tailscale)
+MQTT_BROKER = 'localhost' # IP ของ RPi (Tailscale)
 MQTT_PORT = 1883
 MQTT_TOPIC_POINTS = 'mapping/points_2d' # Topic ใหม่สำหรับส่งข้อมูลพิกัด
 MQTT_TOPIC_RESET = 'mapping/reset'      # Topic สำหรับรับคำสั่ง Reset จาก GUI
@@ -82,7 +82,7 @@ class PointPublisherNode(Node):
         
         try:
             payload_json = json.dumps(payload)
-            self.mqtt_client.publish(MQTT_TOPIC_POINTS, payload_json)
+            self.mqtt_client.publish(MQTT_TOPIC_POINTS, payload_json, qos=100)
         except Exception as e:
             self.get_logger().error(f"Failed to publish points: {e}")
 

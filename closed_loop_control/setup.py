@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'encoder_node = closed_loop_control.encoder_node:main',
             'controller_node = closed_loop_control.controller_node:main',
+            'auto_scanner = closed_loop_control.auto_scanner_node:main'
         ],
     },
 )

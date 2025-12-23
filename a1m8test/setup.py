@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'a1m8test = a1m8test.a1m8test:main',
+            'lidar_logger_node = a1m8test.lidar_logger_node:main',
         ],
     },
 )

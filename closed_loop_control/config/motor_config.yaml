@@ -15,10 +15,10 @@ controller_node:
     direction_ccw: 0
 
     offset_deg: -10.0
-    max_velocity_deg_per_sec: 200.0
-    min_velocity_deg_per_sec: 20.0
-    tolerance_deg: 0.5
+    max_velocity_deg_per_sec: 500.0
+    min_velocity_deg_per_sec: 200.0
+    tolerance_deg: 1.0
     deceleration_zone_deg: 10.0
 
-    default_speed_deg_per_sec: 150.0
+    default_speed_deg_per_sec: 300.0
     stop_on_crossing: false
