@@ -95,7 +95,7 @@ class PointPublisherNode(Node):
         # --- 2. Timestamp Verification ---
         # เช็คว่าข้อมูลมุม (Encoder) เก่าเกินไปหรือไม่ (เช่น เกิน 0.1 วินาที)
         # ถ้าเก่าเกินไป แสดงว่ามุมอาจจะไม่ซิงค์กับเลเซอร์ -> ทิ้งข้อมูลรอบนี้
-        now = self.get_logger().get_clock().now()
+        now = self.get_clock().now()
         time_diff = (now - self.last_angle_time).nanoseconds / 1e9
         
         if time_diff > 0.15: # ยอมรับ delay ได้ไม่เกิน 150ms
