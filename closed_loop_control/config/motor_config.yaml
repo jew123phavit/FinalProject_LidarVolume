@@ -29,3 +29,4 @@ integrated_scanner_node:
     end_angle_deg: 225.0                # ขากลับ (CW from start)
     scan_speed_dps: 80.0                # ↓ ลดจาก 200 (smooth scanning)
     pause_duration_s: 1.0 
+    velocity_smoother_alpha: 0.3       # NEW: Smoothing factor for velocity changes
