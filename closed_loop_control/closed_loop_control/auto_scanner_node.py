@@ -8,33 +8,38 @@ import time
 # --- MQTT Configuration ---
 MQTT_BROKER = 'localhost' 
 MQTT_PORT = 1883
-MQTT_TOPIC_CMD = 'control/command'  # Topic สำหรับรับคำสั่งจาก GUI
+MQTT_TOPIC_CMD = 'control/command'
 
 class AutoScannerNode(Node):
     """
-    Auto Scanner Node (Rev 2.0)
-    - รองรับ MQTT Command (Start/Stop/Home)
-    - มีระบบ Homing อัตโนมัติก่อนเริ่มงาน
-    - ป้องกันการส่งมุมเกินขอบเขต (Safety Clamp)
+    Auto Scanner Node (Rev 3.0 - Advisor Fix)
+    - เพิ่ม Home Position (Parking) แยกจาก Start Position
+    - Start: Home -> Start -> Scan Loop
+    - Stop: Scan Loop -> Home
     """
     def __init__(self):
         super().__init__('auto_scanner_node')
         
-        # --- Parameters ---
-        self.declare_parameter('start_angle_deg', 0.0)
+        # --- Parameters (ตั้งค่าตามที่คุณวัดมา) ---
+        # 1. Home (Parking): 81.0
+        # 2. Start (0 deg phys): 167.0
+        # 3. End (180 deg phys): 352.0
+        self.declare_parameter('home_angle_deg', 90.0)
+        self.declare_parameter('start_angle_deg', 270.0)
         self.declare_parameter('end_angle_deg', 180.0)
         self.declare_parameter('scan_speed_dps', 200.0)
         self.declare_parameter('pause_duration_s', 0.5)
 
+        self.home_angle = self.get_parameter('home_angle_deg').value
         self.start_angle = self.get_parameter('start_angle_deg').value
         self.end_angle = self.get_parameter('end_angle_deg').value
         self.scan_speed = self.get_parameter('scan_speed_dps').value
         self.pause_duration = self.get_parameter('pause_duration_s').value
 
         # --- State Machine Variables ---
-        # States: "IDLE", "HOMING", "SCAN_CW", "PAUSE_CW", "SCAN_CCW", "PAUSE_CCW"
+        # States: "IDLE", "MOVING_TO_START", "SCAN_CW", "PAUSE_CW", "SCAN_CCW", "PAUSE_CCW", "PARKING"
         self.state = "IDLE"
-        self.is_scanning_active = False # ตัวแปรคุมว่าเราอยู่ในโหมด Auto Run หรือไม่
+        self.is_scanning_active = False 
 
         # --- MQTT Setup ---
         self.mqtt_client = mqtt.Client()
@@ -52,14 +57,14 @@ class AutoScannerNode(Node):
         self.pub_target_dir = self.create_publisher(String, '/target_dir', 10)
         self.pub_target_speed = self.create_publisher(Float32, '/target_speed', 10)
 
-        # รอรับสัญญาณว่ามอเตอร์หมุนถึงที่แล้ว
         self.sub_motion_reached = self.create_subscription(
             Float32,
             '/motion_reached',
             self._motion_reached_callback,
             10)
 
-        self.get_logger().info(f"Auto Scanner Ready. Range: [{self.start_angle}, {self.end_angle}]")
+        self.get_logger().info(f"Auto Scanner Rev 3.0 Ready.")
+        self.get_logger().info(f"Config: Home={self.home_angle}, Start={self.start_angle}, End={self.end_angle}")
 
     # ---------------------------------------------------------
     # MQTT Handlers
@@ -69,7 +74,6 @@ class AutoScannerNode(Node):
             client.subscribe(MQTT_TOPIC_CMD)
 
     def on_mqtt_message(self, client, userdata, msg):
-        """รับคำสั่ง JSON: {'target': 'motor', 'action': 'start'}"""
         try:
             payload = json.loads(msg.payload.decode())
             target = payload.get('target')
@@ -80,10 +84,10 @@ class AutoScannerNode(Node):
                     self.get_logger().info("MQTT CMD: START SEQUENCE")
                     self.start_sequence()
                 elif action == 'stop':
-                    self.get_logger().info("MQTT CMD: STOP")
+                    self.get_logger().info("MQTT CMD: STOP & PARK")
                     self.stop_sequence()
                 elif action == 'home':
-                    self.get_logger().info("MQTT CMD: GO HOME")
+                    self.get_logger().info("MQTT CMD: GO HOME ONLY")
                     self.go_home_only()
                     
         except Exception as e:
@@ -93,115 +97,126 @@ class AutoScannerNode(Node):
     # Command Logic
     # ---------------------------------------------------------
     def start_sequence(self):
-        """เริ่มทำงาน: ต้อง Homing ก่อนเสมอ"""
-        if self.state == "IDLE":
+        """เริ่มทำงาน: ไปที่จุด Start (167) ก่อนเริ่ม Scan"""
+        if self.state == "IDLE" or self.state == "PARKING":
             self.is_scanning_active = True
-            self.state = "HOMING"
-            self.get_logger().info(">>> Sequence Started. Homing first...")
-            
-            # ส่งคำสั่งให้วิ่งไปที่จุดเริ่มต้น (0 องศา)
+            self.state = "MOVING_TO_START"
+            self.get_logger().info(f">>> Moving to Start Position ({self.start_angle}°)...")
             self._send_movement_cmd(self.start_angle, speed=self.scan_speed)
 
     def stop_sequence(self):
-        """หยุดการทำงานทันที"""
+        """หยุดการทำงาน: เลิก loop แล้วกลับบ้าน (Home)"""
         self.is_scanning_active = False
-        self.state = "IDLE"
-        # สามารถเพิ่มคำสั่งหยุดมอเตอร์ฉุกเฉินได้ถ้า controller_node รองรับ
-        # self._send_angle_command(current_angle) # หยุดที่จุดปัจจุบัน (Optional)
+        # หมายเหตุ: เราจะไม่เปลี่ยน state ทันทีตรงนี้ 
+        # แต่จะให้ Callback (_motion_reached หรือ Timer) เป็นตัวเช็ค flag 'is_scanning_active' แล้วพาไป State PARKING เอง
 
     def go_home_only(self):
-        """สั่งกลับบ้านเฉยๆ ไม่รันต่อ"""
-        self.is_scanning_active = False # ไม่เข้า Loop Scan
-        self.state = "HOMING"
-        self._send_movement_cmd(self.start_angle, speed=self.scan_speed)
+        """สั่งกลับบ้าน (81)"""
+        self.is_scanning_active = False
+        self.state = "PARKING"
+        self._send_movement_cmd(self.home_angle, speed=self.scan_speed)
 
     # ---------------------------------------------------------
-    # Movement Helpers (Safety)
+    # Movement Helpers
     # ---------------------------------------------------------
     def _clamp_angle(self, angle):
-        """(ข้อ 1) ป้องกันการส่งค่ามุมเกินขอบเขต"""
-        clamped = max(self.start_angle, min(angle, self.end_angle))
+        """
+        ป้องกันการส่งค่ามุมเกินขอบเขต
+        อาจารย์แก้ไข: ต้องยอมให้ไปที่ Home (81) ได้ แม้จะอยู่นอกช่วง Start-End (167-352)
+        """
+        # ถ้าเป้าหมายคือ Home ให้ผ่านได้เลย
+        if abs(angle - self.home_angle) < 0.1:
+            return angle
+            
+        # ถ้าไม่ใช่ Home ให้ Clamp อยู่ในช่วง Start-End
+        # หมายเหตุ: ใช้ min/max สลับกันเพื่อให้รองรับกรณี Start > End ได้ด้วย (เผื่ออนาคต)
+        lower = min(self.start_angle, self.end_angle)
+        upper = max(self.start_angle, self.end_angle)
+        
+        clamped = max(lower, min(angle, upper))
+        
         if clamped != angle:
-            self.get_logger().warn(f"Angle {angle} out of bounds! Clamped to {clamped}")
+            self.get_logger().warn(f"Angle {angle} out of bounds [{lower},{upper}]! Clamped to {clamped}")
         return clamped
 
     def _send_movement_cmd(self, angle, speed=None, direction='AUTO'):
-        # 1. Safety Clamp
         safe_angle = self._clamp_angle(angle)
         
-        # 2. Set Speed
         if speed is not None:
             v_msg = Float32()
             v_msg.data = float(speed)
             self.pub_target_speed.publish(v_msg)
 
-        # 3. Set Direction (Optional if 'AUTO' works well)
         d_msg = String()
         d_msg.data = direction
         self.pub_target_dir.publish(d_msg)
 
-        # 4. Send Target Angle
         msg = Float32()
         msg.data = float(safe_angle)
         self.pub_target_angle.publish(msg)
-        self.get_logger().info(f"==> Move to {safe_angle:.2f}° ({self.state})")
+        self.get_logger().info(f"==> Move to {safe_angle:.2f}° (State: {self.state})")
 
     # ---------------------------------------------------------
     # State Machine Callback
     # ---------------------------------------------------------
     def _motion_reached_callback(self, msg):
-        """
-        ทำงานเมื่อมอเตอร์แจ้งว่า 'ถึงเป้าหมายแล้ว'
-        """
         reached_angle = msg.data
         self.get_logger().info(f"[ACK] Reached {reached_angle:.2f}°")
 
-        # ถ้า user สั่ง stop ไปแล้ว ให้จบการทำงาน
-        if self.state == "IDLE":
-            return
-
-        # State Machine Transition
-        if self.state == "HOMING":
-            if self.is_scanning_active:
-                # Homing เสร็จ -> เริ่ม Scan รอบแรก (ไปที่ End)
-                self.get_logger().info("Homing Complete. Starting Scan Loop...")
-                self.state = "SCAN_CW"
-                self._send_movement_cmd(self.end_angle)
-            else:
-                # Homing อย่างเดียว -> จบ
-                self.get_logger().info("Homing Complete. System Idle.")
+        # กรณีสั่ง Stop กลางคัน ให้กลับบ้าน (ถ้ายังไม่ได้อยู่ที่บ้าน)
+        if not self.is_scanning_active:
+            if self.state != "PARKING" and self.state != "IDLE":
+                self.get_logger().info("Stop requested. Returning to HOME...")
+                self.state = "PARKING"
+                self._send_movement_cmd(self.home_angle)
+                return
+            elif self.state == "PARKING":
+                self.get_logger().info("Parked at Home. System IDLE.")
                 self.state = "IDLE"
+                return
+
+        # State Machine Transition (Normal Operation)
+        if self.state == "MOVING_TO_START":
+            # ถึงจุด Start (167) แล้ว -> เริ่มสแกนไปที่ End (352)
+            self.get_logger().info("At Start Position. Begin Scanning CW...")
+            self.state = "SCAN_CW"
+            self._send_movement_cmd(self.end_angle)
 
         elif self.state == "SCAN_CW":
-            # ถึงปลายทาง (180) -> หยุดรอ -> กลับ
+            # ถึง End (352) -> หยุดรอ -> เตรียมกลับ
             self.state = "PAUSE_CW"
             self.get_logger().info(f"Scan CW Done. Pausing {self.pause_duration}s")
             self.create_timer(self.pause_duration, self._timer_next_step)
 
         elif self.state == "SCAN_CCW":
-            # ถึงต้นทาง (0) -> หยุดรอ -> ไปใหม่
+            # ถึง Start (167) -> หยุดรอ -> เตรียมไปใหม่
             self.state = "PAUSE_CCW"
             self.get_logger().info(f"Scan CCW Done. Pausing {self.pause_duration}s")
             self.create_timer(self.pause_duration, self._timer_next_step)
+            
+        elif self.state == "PARKING":
+            # ถึง Home (81) -> จบ
+            self.get_logger().info("Parked at Home. System IDLE.")
+            self.state = "IDLE"
 
     def _timer_next_step(self):
         """Timer สำหรับการหยุดรอ (Pause)"""
-        # เคลียร์ Timer ทิ้งก่อน (One-shot)
         if hasattr(self, '_timer') and self._timer:
             self.destroy_timer(self._timer)
         
-        # เช็คอีกทีว่ายัง Active อยู่ไหม
+        # เช็ค Stop flag ระหว่างรอ Timer
         if not self.is_scanning_active:
-            self.state = "IDLE"
+            self.state = "PARKING"
+            self._send_movement_cmd(self.home_angle)
             return
 
         if self.state == "PAUSE_CW":
-            # พักเสร็จแล้ว -> วิ่งกลับ (CCW)
+            # พักเสร็จ -> วิ่งกลับไป Start (167) (CCW)
             self.state = "SCAN_CCW"
             self._send_movement_cmd(self.start_angle)
 
         elif self.state == "PAUSE_CCW":
-            # พักเสร็จแล้ว -> วิ่งไป (CW)
+            # พักเสร็จ -> วิ่งไป End (352) (CW)
             self.state = "SCAN_CW"
             self._send_movement_cmd(self.end_angle)
 

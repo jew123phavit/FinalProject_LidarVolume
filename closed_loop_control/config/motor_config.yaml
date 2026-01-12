@@ -1,24 +1,31 @@
 encoder_node:
   ros__parameters:
     i2c_bus: 1
-    home_offset: 3030   # ปรับให้ 0° ตรงจริง
+    home_offset: 819
+    publish_rate_hz: 100
 
-controller_node:
+integrated_scanner_node:
   ros__parameters:
     step_pin: 14
     dir_pin: 15
     enable_pin: 18
 
-    base_steps_per_rev: 100
-    microstepping: 4
-    direction_cw: 1
-    direction_ccw: 0
-
-    offset_deg: -10.0
-    max_velocity_deg_per_sec: 500.0
-    min_velocity_deg_per_sec: 200.0
-    tolerance_deg: 1.0
-    deceleration_zone_deg: 10.0
-
-    default_speed_deg_per_sec: 300.0
-    stop_on_crossing: false
+    base_steps_per_rev: 200      # 28BYJ-48 Full Step (2048 step/rev microstepped)
+    microstepping: 2             # 1=full-step, 2=half-step
+      
+    max_velocity_deg_per_sec: 100.0     # ↓ ลดจาก 200 เพื่อความเรียบ (smooth)
+    min_velocity_deg_per_sec: 10.0      # ↓ ลดจาก 20 เพื่อ fine control
+    tolerance_deg: 2.0                  # ↑ เพิ่มจาก 1.0 (ลดความไว)
+    deceleration_zone_deg: 45.0         # ↑ เพิ่มจาก 30 (ให้ settling นาน)
+    settling_time_s: 0.2                # NEW: เวลารอให้มอเตอร์ล็อก
+      
+    # P-Control Strategy:
+    # - ยิ่งไกล target → ความเร็วสูง
+    # - ใกล้ target (ภายใน deceleration_zone) → ความเร็วลด
+    # - ที่ target ± tolerance → ถือว่า "reached" และ settling
+      
+    home_angle_deg: 190.0
+    start_angle_deg: 135.0               # ขาไป (CCW from home)
+    end_angle_deg: 225.0                # ขากลับ (CW from start)
+    scan_speed_dps: 80.0                # ↓ ลดจาก 200 (smooth scanning)
+    pause_duration_s: 1.0 

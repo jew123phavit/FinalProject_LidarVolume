@@ -13,7 +13,7 @@ def generate_launch_description():
             parameters=[cfg], output='screen',
         ),
         Node(
-            package=pkg, executable='controller_node', name='controller_node',
+            package=pkg, executable='integrated_scanner_node', name='integrated_scanner_node',
             parameters=[cfg], output='screen',
         ),
     ])
