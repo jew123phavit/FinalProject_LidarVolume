@@ -37,16 +37,11 @@ def generate_launch_description():
 
     # Node สั่งสแกนอัตโนมัติ (State Machine)
     # ใส่ TimerAction เพื่อหน่วงเวลาให้ controller พร้อมก่อน 2 วินาที
-    auto_scanner_node = TimerAction(
-        period=2.0,
-        actions=[
-            Node(
-                package='closed_loop_control',
-                executable='auto_scanner_node',
-                name='auto_scanner_node',
-                output='screen'
-            )
-        ]
+    integrated_scanner_node = Node(
+        package='integrated_scanner_node',
+        executable='integrated_scanner_node',
+        name='integrated_scanner_node',
+        output='screen'
     )
 
     # --- 3. Accumulation MQTT (Main Process) ---
@@ -63,6 +58,6 @@ def generate_launch_description():
         sllidar_launch,
         encoder_node,
         controller_node,
-        auto_scanner_node,
+        integrated_scanner_node,
         accumulation_node
     ])

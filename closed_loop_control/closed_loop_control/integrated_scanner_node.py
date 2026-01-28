@@ -97,25 +97,25 @@ class IntegratedScannerNode(Node):
             
             # Motor
             ('base_steps_per_rev', 200),
-            ('microstepping', 2),
+            ('microstepping', 16),
             ('direction_cw', 1),
             ('direction_ccw', 0),
             
             # Velocity
-            ('max_velocity_deg_per_sec', 180.0),
-            ('min_velocity_deg_per_sec', 15.0),
+            ('max_velocity_deg_per_sec', 300.0),
+            ('min_velocity_deg_per_sec', 30.0),
             
             # Position Control
-            ('tolerance_deg', 1.5),
+            ('tolerance_deg', 2.0),
             ('deceleration_zone_deg', 50.0),
-            ('settling_time_s', 0.15),
+            ('settling_time_s', 0.2),
             
             # Scanner Motion
             ('home_angle_deg', 190.0),
             ('start_angle_deg', 135.0),
             ('end_angle_deg', 225.0),
             ('scan_speed_dps', 120.0),
-            ('pause_duration_s', 0.8),
+            ('pause_duration_s', 0.5),
             
             # Advanced
             ('velocity_smoother_alpha', 0.3),
