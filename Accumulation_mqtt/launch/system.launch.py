@@ -27,13 +27,13 @@ def generate_launch_description():
         output='screen'
     )
 
-    # Node ควบคุมมอเตอร์ (GPIO + PID)
-    controller_node = Node(
-        package='closed_loop_control',
-        executable='controller_node',
-        name='controller_node',
-        output='screen'
-    )
+    # # Node ควบคุมมอเตอร์ (GPIO + PID)
+    # controller_node = Node(
+    #     package='closed_loop_control',
+    #     executable='controller_node',
+    #     name='controller_node',
+    #     output='screen'
+    #)
 
     # Node สั่งสแกนอัตโนมัติ (State Machine)
     # ใส่ TimerAction เพื่อหน่วงเวลาให้ controller พร้อมก่อน 2 วินาที
@@ -57,7 +57,7 @@ def generate_launch_description():
     return LaunchDescription([
         sllidar_launch,
         encoder_node,
-        controller_node,
+        # controller_node,  # ถ้าไม่ใช้ controller_node ให้ comment ออก
         integrated_scanner_node,
         accumulation_node
     ])

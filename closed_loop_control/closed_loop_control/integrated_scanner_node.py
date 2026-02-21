@@ -91,9 +91,9 @@ class IntegratedScannerNode(Node):
         # =====================================================
         self.declare_parameters('', [
             # GPIO
-            ('step_pin', 14),
-            ('dir_pin', 15),
-            ('enable_pin', 18),
+            ('step_pin', 23),
+            ('dir_pin', 24),
+            ('enable_pin', 25),
             
             # Motor
             ('base_steps_per_rev', 200),
@@ -111,9 +111,9 @@ class IntegratedScannerNode(Node):
             ('settling_time_s', 0.2),
             
             # Scanner Motion
-            ('home_angle_deg', 190.0),
-            ('start_angle_deg', 135.0),
-            ('end_angle_deg', 225.0),
+            ('home_angle_deg', 180.0),
+            ('start_angle_deg', 90.0),
+            ('end_angle_deg', 270.0),
             ('scan_speed_dps', 120.0),
             ('pause_duration_s', 0.5),
             
