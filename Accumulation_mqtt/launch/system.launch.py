@@ -38,7 +38,7 @@ def generate_launch_description():
     # Node สั่งสแกนอัตโนมัติ (State Machine)
     # ใส่ TimerAction เพื่อหน่วงเวลาให้ controller พร้อมก่อน 2 วินาที
     integrated_scanner_node = Node(
-        package='integrated_scanner_node',
+        package='closed_loop_control',
         executable='integrated_scanner_node',
         name='integrated_scanner_node',
         output='screen'

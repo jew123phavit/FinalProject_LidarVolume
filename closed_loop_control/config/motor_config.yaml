@@ -15,10 +15,10 @@ integrated_scanner_node:
     direction_cw: 1
     direction_ccw: 0
 
-    max_velocity_deg_per_sec: 300.0     # ↓ ลดจาก 200 เพื่อความเรียบ (smooth)
-    min_velocity_deg_per_sec: 30.0      # ↓ ลดจาก 20 เพื่อ fine control
-    tolerance_deg: 2.0                  # ↑ เพิ่มจาก 1.0 (ลดความไว)
-    deceleration_zone_deg: 50.0         # ↑ เพิ่มจาก 30 (ให้ settling นาน)
+    max_velocity_deg_per_sec: 50.0     # ↓ ลดจาก 200 เพื่อความเรียบ (smooth)
+    min_velocity_deg_per_sec: 5.0      # ↓ ลดจาก 20 เพื่อ fine control
+    tolerance_deg: 1.0                  # ↑ เพิ่มจาก 1.0 (ลดความไว)
+    deceleration_zone_deg: 30.0         # ↑ เพิ่มจาก 30 (ให้ settling นาน)
     settling_time_s: 0.2                # NEW: เวลารอให้มอเตอร์ล็อก
       
     # P-Control Strategy:
@@ -29,6 +29,6 @@ integrated_scanner_node:
     home_angle_deg: 180.0
     start_angle_deg: 90.0               # ขาไป (CCW from home)
     end_angle_deg: 270.0                # ขากลับ (CW from start)
-    scan_speed_dps: 120.0                # ↓ ลดจาก 200 (smooth scanning)
+    scan_speed_dps: 15.0                # ↓ ลดจาก 200 (smooth scanning)
     pause_duration_s: 0.5 
-    velocity_smoother_alpha: 0.3       # NEW: Smoothing factor for velocity changes
+    velocity_smoother_alpha: 0.5       # NEW: Smoothing factor for velocity changes

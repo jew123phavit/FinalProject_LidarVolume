@@ -102,23 +102,23 @@ class IntegratedScannerNode(Node):
             ('direction_ccw', 0),
             
             # Velocity
-            ('max_velocity_deg_per_sec', 300.0),
-            ('min_velocity_deg_per_sec', 30.0),
+            ('max_velocity_deg_per_sec', 50.0),
+            ('min_velocity_deg_per_sec', 5.0),
             
             # Position Control
-            ('tolerance_deg', 2.0),
-            ('deceleration_zone_deg', 50.0),
+            ('tolerance_deg', 1.0),
+            ('deceleration_zone_deg', 30.0),
             ('settling_time_s', 0.2),
             
             # Scanner Motion
             ('home_angle_deg', 180.0),
             ('start_angle_deg', 90.0),
             ('end_angle_deg', 270.0),
-            ('scan_speed_dps', 120.0),
+            ('scan_speed_dps', 15.0),
             ('pause_duration_s', 0.5),
             
             # Advanced
-            ('velocity_smoother_alpha', 0.3),
+            ('velocity_smoother_alpha', 0.5),
         ])
         
         # =====================================================

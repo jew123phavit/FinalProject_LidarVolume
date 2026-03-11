@@ -71,40 +71,94 @@ class PointPublisherNode(Node):
         self.last_angle_time = self.get_clock().now()
 
     def scan_callback(self, msg: LaserScan):
-        if not self.is_lidar_enabled: return
+        if not self.is_lidar_enabled:
+            return
 
-        # 1. เช็คเวลา (ยอมรับ delay ได้มากขึ้นเป็น 0.5s)
+        # 1. เช็คเวลา (Timestamp Verification)
         now = self.get_clock().now()
         time_diff = (now - self.last_angle_time).nanoseconds / 1e9
-        if time_diff > 0.5:
+        
+        if time_diff > 0.5: 
             if (now - self.last_log_time).nanoseconds / 1e9 > 2.0:
                 self.get_logger().warn(f"Waiting for Encoder... (Lag: {time_diff:.2f}s)")
                 self.last_log_time = now
             return 
 
-        # 2. คำนวณ 3D Points (XYZ)
-        points_this_scan = []
-        angle_rad = np.radians(self.current_angle)
-        cos_motor = np.cos(angle_rad)
-        sin_motor = np.sin(angle_rad)
+        # ===================================================
+        # --- 3D Cartesian Mapping (Matrix Transformation) ---
+        # ===================================================
+        
+        ranges = np.array(msg.ranges)
 
-        for i, distance in enumerate(msg.ranges):
-            # กรองข้อมูลระยะทางที่ผิดพลาด
-            if not (msg.range_min < distance < msg.range_max): continue
-            if distance > 4.0: continue # ตัดข้อมูลไกลเกิน 4 เมตร
+        # สร้าง Array มุมของ LiDAR ทุกจุด
+        angles_raw = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
 
-            angle_lidar = msg.angle_min + i * msg.angle_increment
+        # Normalize มุมให้อยู่ช่วง 0 - 2π (ป้องกันค่าติดลบ)
+        angles_norm = angles_raw % (2 * np.pi)
+
+        # --- กรองมุม LiDAR: เก็บเฉพาะ 90° - 270° เท่านั้น ---
+        # (ตัด Noise ด้านบนถังและบริเวณนอกถังทิ้ง)
+        angle_mask = (angles_norm >= np.radians(90)) & (angles_norm <= np.radians(270))
+
+        # --- กรองระยะ: ต้องอยู่ในช่วงที่ valid และไม่เกิน 1.0 เมตร ---
+        # (ถังมี r=22cm เท่านั้น ไม่จำเป็นต้องมองไกลกว่านี้)
+        distance_mask = (ranges > msg.range_min) & (ranges < msg.range_max) & (ranges <= 1.0)
+
+        # รวม Mask ทั้งสองเข้าด้วยกัน
+        valid_mask = angle_mask & distance_mask
+        
+        if not np.any(valid_mask):
+            return
             
-            # คำนวณพิกัด XYZ (SI Unit: เมตร)
-            # x, y คือระนาบพื้น, z คือความสูงจากพื้น
-            r_projected = distance * np.sin(angle_lidar) # ระยะราบ
-            x_m = r_projected * cos_motor
-            y_m = r_projected * sin_motor
-            z_m = distance * np.cos(angle_lidar)
+        d = ranges[valid_mask]
+        indices = np.where(valid_mask)[0]
+        
+        # ---------------------------------------------------
+        # แกน Y (Pitch): แนวการหมุนของ LiDAR
+        # ---------------------------------------------------
+        # lidar_offset = 180° เพื่อให้จุด 0° ชี้ลงพื้นพอดี (คงค่าเดิมของคุณ)
+        lidar_offset = np.radians(180.0) 
+        theta_l = msg.angle_min + indices * msg.angle_increment + lidar_offset
 
-            points_this_scan.append([x_m, y_m, z_m])
+        # สร้างพิกัด Local ของ Lidar (เมื่อหมุนรอบแกน Y ระนาบที่ได้คือระนาบ XZ)
+        x_local = d * np.sin(theta_l)    # กวาดไปตามแนวแกน X
+        y_local = np.zeros_like(d)       # แกน Y เป็น 0 เพราะเป็นจุดหมุนของ Lidar
+        z_local = -d * np.cos(theta_l)   # ติดลบเพื่อให้ชี้ลงพื้น (Z เป็นความสูง)
 
-        self.current_scan_points = points_this_scan
+        P_local = np.vstack((x_local, y_local, z_local))
+
+        # ---------------------------------------------------
+        # แกน X (Roll): แนวการหมุนของ Stepper Motor
+        # ---------------------------------------------------
+        # ให้ 180 องศาคือจุดศูนย์กลาง (ชี้ลงพื้นตรงๆ) จึงต้องลบ 180 ออก
+        theta_m = np.radians(-(self.current_angle - 180.0))
+        
+        cos_m = np.cos(theta_m)
+        sin_m = np.sin(theta_m)
+
+        # Matrix สำหรับหมุนรอบแกน X (Roll Matrix)
+        R_motor_x = np.array([
+            [1,     0,      0],
+            [0, cos_m, -sin_m],
+            [0, sin_m,  cos_m]
+        ])
+
+        # ---------------------------------------------------
+        # คำนวณพิกัด 3D จริง (Matrix Multiplication)
+        # ---------------------------------------------------
+        # นำ Matrix มอเตอร์ คูณกับ พิกัด Local ของ Lidar
+        P_global = R_motor_x @ P_local
+
+        # ---------------------------------------------------
+        # (Optional) ชดเชยจุดหมุน (Translation Offset)
+        # ถ้าแกนมอเตอร์ กับ หัว Lidar มีระยะห่างกัน (เยื้องกัน) 
+        # ให้ใส่ระยะห่าง (หน่วยเมตร) ที่นี่ เพื่อลบความโค้งที่เหลืออยู่ให้แบนสนิท
+        # T_offset = np.array([[0.0], [0.0], [0.05]]) # เช่น Lidar ต่ำกว่าแกนมอเตอร์ 5 cm
+        # P_global = P_global + T_offset
+        # ---------------------------------------------------
+
+        # แปลงข้อมูลกลับเป็น List เพื่อส่งผ่าน MQTT
+        self.current_scan_points = P_global.T.tolist()
 
     def publish_points_callback(self):
         if not self.current_scan_points: return
