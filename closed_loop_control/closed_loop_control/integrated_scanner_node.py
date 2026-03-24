@@ -106,15 +106,15 @@ class IntegratedScannerNode(Node):
             ('min_velocity_deg_per_sec', 5.0),
             
             # Position Control
-            ('tolerance_deg', 1.0),
+            ('tolerance_deg', 2.0),
             ('deceleration_zone_deg', 30.0),
-            ('settling_time_s', 0.2),
+            ('settling_time_s', 0.3),
             
             # Scanner Motion
             ('home_angle_deg', 180.0),
             ('start_angle_deg', 90.0),
             ('end_angle_deg', 270.0),
-            ('scan_speed_dps', 15.0),
+            ('scan_speed_dps', 10.0),
             ('pause_duration_s', 0.5),
             
             # Advanced
