@@ -45,18 +45,18 @@ class ControllerNode(Node):
             ('dir_pin', 15),
             ('enable_pin', 18),
             ('base_steps_per_rev', 200),
-            ('microstepping', 8),
+            ('microstepping', 4),
             ('direction_cw', 1),
             ('direction_ccw', 0),
 
-            ('offset_deg', 0.0),  # ชดเชยมุมรวม
+            ('offset_deg', -10.0),  # ชดเชยมุมรวม
 
-            ('max_velocity_deg_per_sec', 100.0),  # เร็วสุด
-            ('min_velocity_deg_per_sec', 10.0),   # ช้าที่สุด
+            ('max_velocity_deg_per_sec', 500.0),  # เร็วสุด
+            ('min_velocity_deg_per_sec', 100.0),   # ช้าที่สุด
             ('tolerance_deg', 1.0),               # ระยะหยุด
-            ('deceleration_zone_deg', 20.0),      # โซนชะลอ
+            ('deceleration_zone_deg', 10.0),      # โซนชะลอ
 
-            ('default_speed_deg_per_sec', 100.0), # ถ้า user ส่ง speed มาจะใช้ค่านั้น
+            ('default_speed_deg_per_sec', 200.0), # ถ้า user ส่ง speed มาจะใช้ค่านั้น
             ('stop_on_crossing', False),          # หยุดเมื่อข้ามเป้าในโหมดบังคับทิศ
         ])
 
@@ -86,7 +86,7 @@ class ControllerNode(Node):
         # (5) Control loop 200 Hz
         self.create_timer(0.005, self._loop)
 
-        # (6) เปิด parameter callback
+        # (6) เปิด parameter callback ให้ทำงานเมื่อมีการเปลี่ยนแปลงค่า Parameter จากภายนอก ผ่าน ros2 param set
         self.add_on_set_parameters_callback(self._param_cb)
 
     # ---------- utilities ----------
